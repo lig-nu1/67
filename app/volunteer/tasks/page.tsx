@@ -233,8 +233,6 @@ function TasksContent() {
 
 export default function VolunteerTasksPage() {
   return (
-    <AuthProvider>
-      <TasksContent />
-    </AuthProvider>
+    <TasksContent />
   );
 }

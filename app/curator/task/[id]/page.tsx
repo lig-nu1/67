@@ -8,51 +8,40 @@ import TrustCard from '@/components/TrustCard';
 import { formatDate } from '@/lib/utils';
 import {
   Loader2,
+  ArrowLeft,
   Calendar,
   MapPin,
   Users,
-  ArrowLeft,
-  UserCheck,
-  UserX,
-  Bot,
-  Image as ImageIcon,
   CheckCircle,
   XCircle,
+  Clock,
   Sparkles,
+  User,
+  ExternalLink,
+  Bot,
+  BrainCircuit,
 } from 'lucide-react';
-
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  location: string;
-  event_date: string;
-  volunteer_quota: number;
-  hard_skills: string[];
-  soft_skills: string[];
-  status: string;
-}
-
-interface MatchedVolunteer {
-  user_id: string;
-  name: string;
-  email: string;
-  bio: string;
-  skills: string[];
-  similarity: number;
-  explanation: string;
-}
 
 interface Application {
   id: string;
   volunteer_id: string;
-  match_score: number;
-  match_explanation: string;
   status: string;
-  photo_url: string;
-  verification_verdict: string;
-  verification_comment: string;
-  users?: { name: string; email: string };
+  photo_url?: string;
+  verification_verdict?: string;
+  verification_comment?: string;
+  match_score?: number;
+  match_explanation?: string;
+  created_at: string;
+  users?: {
+    name: string;
+    email: string;
+  }
+}
+
+export default function CuratorTaskDetailPage() {
+  return (
+    <TaskDetailContent />
+  );
 }
 
 function TaskDetailContent() {
@@ -61,12 +50,30 @@ function TaskDetailContent() {
   const params = useParams();
   const taskId = params.id as string;
 
-  const [task, setTask] = useState<Task | null>(null);
-  const [matches, setMatches] = useState<MatchedVolunteer[]>([]);
+  const [task, setTask] = useState<any>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
-  const [matchLoading, setMatchLoading] = useState(false);
-  const [tab, setTab] = useState<'info' | 'matches' | 'applications'>('info');
+  const [matchingResults, setMatchingResults] = useState<any[]>([]);
+  const [matchingLoading, setMatchingLoading] = useState(false);
+
+  async function fetchData() {
+    try {
+      // 1. Fetch task
+      const taskRes = await fetch(`/api/tasks`);
+      const tasksData = await taskRes.json();
+      const foundTask = (tasksData.tasks || []).find((t: any) => t.id === taskId);
+      setTask(foundTask);
+
+      // 2. Fetch applications
+      const appRes = await fetch(`/api/applications?taskId=${taskId}`);
+      const appsData = await appRes.json();
+      setApplications(appsData.applications || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (authLoading) return;
@@ -74,59 +81,45 @@ function TaskDetailContent() {
       router.push('/login');
       return;
     }
+    fetchData();
+  }, [user, authLoading, taskId]);
 
-    const fetchTask = async () => {
-      try {
-        const res = await fetch(`/api/tasks?curatorId=${user.id}`);
-        const data = await res.json();
-        const found = (data.tasks || []).find((t: Task) => t.id === taskId);
-        if (found) setTask(found);
-
-        // Fetch applications
-        const appRes = await fetch(`/api/applications?taskId=${taskId}`);
-        const appData = await appRes.json();
-        setApplications(appData.applications || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTask();
-  }, [user, authLoading, router, taskId]);
-
-  const loadMatches = async () => {
-    setMatchLoading(true);
+  async function updateAppStatus(appId: string, status: 'approved' | 'rejected') {
     try {
-      const res = await fetch('/api/ai/match', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId }),
-      });
-      const data = await res.json();
-      setMatches(data.matches || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setMatchLoading(false);
-    }
-  };
-
-  const handleApplicationAction = async (appId: string, status: 'approved' | 'rejected') => {
-    try {
-      await fetch('/api/applications', {
+      const res = await fetch('/api/applications', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ applicationId: appId, status }),
       });
-      setApplications((prev) =>
-        prev.map((a) => (a.id === appId ? { ...a, status } : a))
-      );
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (err) {
+      alert('Ошибка при обновлении статуса');
+    }
+  }
+
+  async function runSmartMatch() {
+    setMatchingLoading(true);
+    setMatchingResults([]);
+    try {
+      const res = await fetch('/api/ai/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, curatorId: user?.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMatchingResults(data.matches || []);
+      } else {
+        alert(data.error || 'Ошибка при подборе');
+      }
     } catch (err) {
       console.error(err);
+    } finally {
+      setMatchingLoading(false);
     }
-  };
+  }
 
   if (authLoading || loading) {
     return (
@@ -140,8 +133,8 @@ function TaskDetailContent() {
     return (
       <div className="page-container">
         <Navbar />
-        <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-          <p className="text-gray-400">Задача не найдена</p>
+        <div className="max-w-4xl mx-auto px-4 py-20 text-center text-gray-500">
+          Задача не найдена
         </div>
       </div>
     );
@@ -150,207 +143,114 @@ function TaskDetailContent() {
   return (
     <div className="page-container">
       <Navbar />
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back button */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <button
           onClick={() => router.push('/curator/dashboard')}
-          className="flex items-center gap-2 text-gray-500 hover:text-sun-400 text-sm mb-6 transition-colors"
+          className="flex items-center gap-2 text-gray-500 hover:text-sun-400 text-sm mb-8 transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> Назад к панели
+          <ArrowLeft className="w-4 h-4" /> Назад в дашборд
         </button>
 
-        {/* Task header */}
-        <div className="glass-card p-6 mb-6 animate-fade-in">
-          <h1 className="text-2xl font-bold text-white mb-3">{task.title}</h1>
-          <p className="text-gray-400 text-sm mb-4">{task.description}</p>
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-4">
-            {task.location && (
-              <span className="flex items-center gap-1"><MapPin className="w-4 h-4" /> {task.location}</span>
-            )}
-            {task.event_date && (
-              <span className="flex items-center gap-1"><Calendar className="w-4 h-4" /> {formatDate(task.event_date)}</span>
-            )}
-            <span className="flex items-center gap-1"><Users className="w-4 h-4" /> {task.volunteer_quota} чел.</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {task.hard_skills?.map((s, i) => (
-              <span key={i} className="tag-pill">{s}</span>
-            ))}
-            {task.soft_skills?.map((s, i) => (
-              <span key={i} className="tag-pill !bg-purple-500/15 !text-purple-300 !border-purple-500/20">{s}</span>
-            ))}
-          </div>
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="glass-card p-6 border-sun-500/10 animate-fade-in relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-24 h-24 bg-sun-500/5 blur-3xl rounded-full translate-x-10 -translate-y-10"></div>
+               
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="text-3xl font-bold text-white leading-tight">{task.title}</h1>
+                <div className="flex gap-2">
+                   {task.status === 'open' ? (
+                     <span className="tag-pill !bg-emerald-500/20 !text-emerald-400 border-emerald-500/30">ОТКРЫТА</span>
+                   ) : (
+                     <span className="tag-pill !bg-gray-500/20 !text-gray-400 border-gray-500/30">{task.status.toUpperCase()}</span>
+                   )}
+                </div>
+              </div>
+              
+              <p className="text-gray-400 mb-6 leading-relaxed whitespace-pre-wrap">{task.description}</p>
+              
+              <div className="flex flex-wrap items-center gap-6 text-sm text-gray-500 mb-6 py-4 border-y border-white/5">
+                {task.location && (
+                  <span className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-sun-400" /> {task.location}
+                  </span>
+                )}
+                {task.event_date && (
+                  <span className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-sun-400" /> {formatDate(task.event_date)}
+                  </span>
+                )}
+                <span className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-sun-400" /> Квота: {task.volunteer_quota} чел.
+                </span>
+              </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          {[
-            { key: 'info', label: 'Информация' },
-            { key: 'matches', label: 'AI Мэтчи' },
-            { key: 'applications', label: `Заявки (${applications.length})` },
-          ].map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                setTab(t.key as any);
-                if (t.key === 'matches' && matches.length === 0) loadMatches();
-              }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                tab === t.key
-                  ? 'bg-sun-500/20 text-sun-400 border border-sun-500/30'
-                  : 'text-gray-500 hover:text-gray-300 border border-transparent'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        {tab === 'info' && (
-          <div className="glass-card p-6 animate-fade-in">
-            <h2 className="text-lg font-semibold text-white mb-4">Подробности задачи</h2>
-            <div className="space-y-3 text-sm">
-              <div><span className="text-gray-500">Статус:</span> <span className="ml-2 text-white">{task.status}</span></div>
-              <div><span className="text-gray-500">Описание:</span> <p className="mt-1 text-gray-300">{task.description}</p></div>
-              <div><span className="text-gray-500">Локация:</span> <span className="ml-2 text-gray-300">{task.location || '—'}</span></div>
-              <div><span className="text-gray-500">Дата:</span> <span className="ml-2 text-gray-300">{formatDate(task.event_date)}</span></div>
-              <div><span className="text-gray-500">Квота:</span> <span className="ml-2 text-sun-400 font-bold">{task.volunteer_quota}</span></div>
+              <div className="space-y-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Требуемые компетенции</h3>
+                <div className="flex flex-wrap gap-2">
+                  {task.hard_skills?.map((skill: string, i: number) => (
+                    <span key={i} className="px-3 py-1.5 rounded-lg bg-sun-500/10 text-sun-400 text-xs font-medium border border-sun-500/20">{skill}</span>
+                  ))}
+                  {task.soft_skills?.map((skill: string, i: number) => (
+                    <span key={i} className="px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 text-xs font-medium border border-indigo-500/20">{skill}</span>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
 
-        {tab === 'matches' && (
-          <div className="space-y-4 animate-fade-in">
-            {matchLoading ? (
-              <div className="flex flex-col items-center py-20 glass-card">
-                <Loader2 className="w-8 h-8 text-sun-400 animate-spin mb-4" />
-                <p className="text-gray-400 text-sm">AI ищет подходящих волонтёров...</p>
-                <p className="text-gray-600 text-xs mt-1">Генерируем объяснения для каждого мэтча</p>
-              </div>
-            ) : matches.length === 0 ? (
-              <div className="glass-card p-8 text-center">
-                <Bot className="w-12 h-12 text-gray-700 mx-auto mb-3" />
-                <p className="text-gray-400">Нет подходящих волонтёров</p>
-                <p className="text-gray-600 text-xs mt-1">Волонтёры должны заполнить профиль с навыками</p>
-              </div>
-            ) : (
-              matches.map((vol, i) => (
-                <div key={vol.user_id} className="glass-card p-5 animate-slide-up" style={{ animationDelay: `${i * 0.1}s` }}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-white">{vol.name}</h3>
-                      <p className="text-xs text-gray-500">{vol.email}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Sparkles className="w-4 h-4 text-sun-400" />
-                      <span className={`text-lg font-bold ${
-                        vol.similarity >= 0.8 ? 'text-emerald-400' : vol.similarity >= 0.6 ? 'text-amber-400' : 'text-red-400'
-                      }`}>
-                        {Math.round(vol.similarity * 100)}%
-                      </span>
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2 ml-1">Отклики ({applications.length})</h2>
+              {applications.length === 0 ? (
+                <div className="glass-card p-12 text-center text-gray-500 italic">Нет откликов</div>
+              ) : (
+                applications.map((app, i) => (
+                  <div key={app.id} className="glass-card p-5 animate-slide-up group">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-sun-500/10 flex items-center justify-center border border-sun-500/20"><User className="w-5 h-5 text-sun-400" /></div>
+                        <div>
+                          <h4 className="font-bold text-white group-hover:text-sun-400 transition-colors">
+                            {app.users?.name || 'Без имени'}
+                          </h4>
+                          <p className="text-xs text-gray-500">{app.users?.email || 'Без email'}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {app.status === 'pending' ? (
+                          <><button onClick={() => updateAppStatus(app.id, 'approved')} className="text-emerald-400 hover:scale-110"><CheckCircle className="w-5 h-5" /></button><button onClick={() => updateAppStatus(app.id, 'rejected')} className="text-red-500 hover:scale-110"><XCircle className="w-5 h-5" /></button></>
+                        ) : (<span className="tag-pill text-xs px-2 py-0.5 uppercase tracking-tighter">{app.status}</span>)}
+                      </div>
                     </div>
                   </div>
-
-                  {vol.skills && vol.skills.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {vol.skills.map((s, j) => (
-                        <span key={j} className="tag-pill !text-[10px]">{s}</span>
-                      ))}
-                    </div>
-                  )}
-
-                  {vol.bio && (
-                    <p className="text-xs text-gray-400 mb-3 line-clamp-2">{vol.bio}</p>
-                  )}
-
-                  <TrustCard score={vol.similarity} explanation={vol.explanation} />
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
-        )}
 
-        {tab === 'applications' && (
-          <div className="space-y-4 animate-fade-in">
-            {applications.length === 0 ? (
-              <div className="glass-card p-8 text-center">
-                <Users className="w-12 h-12 text-gray-700 mx-auto mb-3" />
-                <p className="text-gray-400">Пока нет заявок</p>
-              </div>
-            ) : (
-              applications.map((app, i) => (
-                <div key={app.id} className="glass-card p-5 animate-slide-up" style={{ animationDelay: `${i * 0.05}s` }}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-white">
-                        {(app as any).users?.name || 'Волонтёр'}
-                      </h3>
-                      <p className="text-xs text-gray-500">{(app as any).users?.email}</p>
+          <div className="space-y-6">
+            <div className="glass-card p-6 border-indigo-500/20 bg-indigo-500/5 group">
+              <div className="flex items-center gap-3 mb-6"><Sparkles className="w-5 h-5 text-indigo-400" /><h3 className="font-bold text-white text-sm uppercase tracking-wider">Smart Matching</h3></div>
+              <button
+                onClick={runSmartMatch}
+                disabled={matchingLoading}
+                className="w-full py-3 bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2"
+              >
+                {matchingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Run Smart Pick
+              </button>
+              {matchingResults.length > 0 && (
+                <div className="mt-8 space-y-4 animate-fade-in">
+                  {matchingResults.map((match, idx) => (
+                    <div key={idx} className="p-3 rounded-lg bg-white/5 border border-white/5 space-y-1">
+                      <div className="flex justify-betweenItems justify-between"><span className="text-xs font-bold text-white truncate max-w-[120px]">{match.name}</span><span className="text-[10px] text-emerald-400">{Math.round(match.similarity * 100)}%</span></div>
+                      <p className="text-[10px] text-gray-400 leading-relaxed italic border-l-2 border-indigo-500/30 pl-2">{match.explanation}</p>
                     </div>
-                    <span className={`tag-pill ${
-                      app.status === 'approved'
-                        ? '!bg-emerald-500/15 !text-emerald-300 !border-emerald-500/20'
-                        : app.status === 'rejected'
-                          ? '!bg-red-500/15 !text-red-300 !border-red-500/20'
-                          : ''
-                    }`}>
-                      {app.status === 'approved' ? 'Принят' : app.status === 'rejected' ? 'О�                  {/* Contact Volunteer (if approved) */}
-                  {app.status === 'approved' && (
-                    <div className="mt-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10 flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-wider">Контакт волонтёра:</p>
-                        <p className="text-xs font-medium text-emerald-300">{(app as any).users?.email}</p>
-                      </div>
-                      <a 
-                        href={`mailto:${(app as any).users?.email}`}
-                        className="btn-primary !px-3 !py-1.5 text-[10px] flex items-center gap-1.5"
-                      >
-                        <Send className="w-3 h-3" />
-                        Написать
-                      </a>
-                    </div>
-                  )}v>
-                  )}
-
-                  {app.photo_url && (
-                    <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      Фото загружено
-                    </div>
-                  )}
-
-                  {/* Action buttons */}
-                  {app.status === 'pending' && (
-                    <div className="flex gap-2 mt-4">
-                      <button
-                        onClick={() => handleApplicationAction(app.id, 'approved')}
-                        className="btn-success flex items-center gap-1 !px-4 !py-2 text-xs"
-                      >
-                        <UserCheck className="w-3.5 h-3.5" /> Принять
-                      </button>
-                      <button
-                        onClick={() => handleApplicationAction(app.id, 'rejected')}
-                        className="btn-danger flex items-center gap-1 !px-4 !py-2 text-xs"
-                      >
-                        <UserX className="w-3.5 h-3.5" /> Отклонить
-                      </button>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))
-            )}
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
-  );
-}
-
-export default function CuratorTaskPage() {
-  return (
-    <AuthProvider>
-      <TaskDetailContent />
-    </AuthProvider>
   );
 }

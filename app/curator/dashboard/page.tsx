@@ -176,8 +176,6 @@ function CuratorDashboardContent() {
 
 export default function CuratorDashboard() {
   return (
-    <AuthProvider>
-      <CuratorDashboardContent />
-    </AuthProvider>
+    <CuratorDashboardContent />
   );
 }

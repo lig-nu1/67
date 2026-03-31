@@ -10,6 +10,8 @@ if (typeof window === 'undefined' && process.env.NODE_ENV !== 'test') {
   }
 }
 
+import { AuthProvider } from '@/lib/auth-context';
+
 export const metadata: Metadata = {
   title: 'Sun Proactive — AI Social Task Exchange',
   description:
@@ -28,7 +30,11 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   );
 }

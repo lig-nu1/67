@@ -175,8 +175,6 @@ function VolunteerDashboardContent() {
 
 export default function VolunteerDashboard() {
   return (
-    <AuthProvider>
-      <VolunteerDashboardContent />
-    </AuthProvider>
+    <VolunteerDashboardContent />
   );
 }

@@ -4,56 +4,70 @@ import { dbAdmin } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
-    const { applicationId, photoBase64, taskDescription } = await req.json();
+    const { applicationId, photoUrl, photoBase64, taskDescription } = await req.json();
 
-    if (!photoBase64 || !taskDescription) {
-      return NextResponse.json({ error: 'Фото и описание задачи обязательны' }, { status: 400 });
+    if (!photoUrl && !photoBase64) {
+      return NextResponse.json({ error: 'Фото в формате URL или Base64 обязательно' }, { status: 400 });
     }
 
-    const prompt = `
-Ты — верификатор выполненной волонтёрской задачи.
+    const finalPhotoUrl = photoUrl || `data:image/jpeg;base64,${photoBase64}`;
 
-Описание задачи: "${taskDescription}"
+    const systemPrompt = `Ты — ИИ-аудитор социальной платформы волонтеров. Твоя задача — проверить, выполнил ли волонтер задачу на основе фото и описания задачи.
+Сравни фото с названием и описанием задачи.
+Проверь, доказывает ли фото выполнение (например, если задача "Уборка парка", на фото должен быть чистый парк или мешки с мусором).
 
-Проанализируй прикреплённое фото и определи:
-1. Соответствует ли фото описанию задачи?
-2. Есть ли признаки выполненной работы?
-
-Верни СТРОГО JSON (без лишнего текста):
+Ответь СТРОГО в формате JSON:
 {
-  "verdict": "approved" или "rejected",
-  "comment": "краткое объяснение решения на русском языке (1-2 предложения)"
-}
-    `.trim();
+  "verdict": "approved" (если выполнено) или "rejected" (если не выполнено или фото не по теме),
+  "comment": "Краткое пояснение вердикта на русском языке (1-2 предложения)."
+}`;
 
-    const reply = await chatCompletion([{
-      role: 'user',
+    const userMessage = {
+      role: 'user' as const,
       content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${photoBase64}` } },
-      ],
-    }], {
-      model: 'google/gemini-2.5-flash',
+        { type: 'text', text: `Задача: ${taskDescription}` },
+        { type: 'image_url', image_url: { url: finalPhotoUrl } }
+      ]
+    };
+
+    // Используем Gemini 2.0 Flash для Vision (быстро и надежно)
+    const aiResponse = await chatCompletion([
+      { role: 'system', content: systemPrompt },
+      userMessage
+    ], {
+      model: 'google/gemini-2.0-flash-001',
       temperature: 0.1,
     });
 
-    // Parse JSON from response
-    const jsonMatch = reply.match(/\{[\s\S]*\}/);
+    // Извлекаем JSON из ответа (на случай, если модель добавила markdown)
+    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return NextResponse.json({ verdict: 'rejected', comment: 'Не удалось обработать фото.' });
+      return NextResponse.json({ 
+        verdict: 'rejected', 
+        comment: 'ИИ не смог сформировать четкий отчет по фото. Попробуйте загрузить другое фото.' 
+      });
     }
 
     const result = JSON.parse(jsonMatch[0]);
 
-    // Update DB if applicationId provided
+    // Обновляем статус в базе данных, если передан ID заявки
     if (applicationId) {
-      await dbAdmin
+      const { data: updatedApp, error: updateError } = await dbAdmin
         .from('applications')
         .update({
+          photo_url: finalPhotoUrl,
           verification_verdict: result.verdict,
           verification_comment: result.comment,
+          status: result.verdict === 'approved' ? 'completed' : 'rejected'
         })
-        .eq('id', applicationId);
+        .eq('id', applicationId)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Update app error:', updateError);
+        // Не фатально для ответа пользователю, но стоит залогировать
+      }
     }
 
     return NextResponse.json(result);

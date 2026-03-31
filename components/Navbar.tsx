@@ -13,6 +13,7 @@ import {
   User as UserIcon,
   Menu,
   X,
+  Sparkles,
 } from 'lucide-react';
 
 interface Notification {
@@ -65,6 +66,7 @@ export default function Navbar() {
     ? [
         { href: '/curator/dashboard', label: 'Панель управления', icon: LayoutDashboard },
         { href: '/curator/create-task', label: 'Создать задачу', icon: ClipboardList },
+        { href: '/curator/ai-manager', label: 'AI Manager', icon: Sparkles },
       ]
     : [
         { href: '/volunteer/dashboard', label: 'Панель управления', icon: LayoutDashboard },

@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context';
 import Navbar from '@/components/Navbar';
 import RAGChat from '@/components/RAGChat';
 import TrustCard from '@/components/TrustCard';
+import VerificationCard from '@/components/VerificationCard';
 import { formatDate } from '@/lib/utils';
 import {
   Loader2,
@@ -232,30 +233,35 @@ function TaskDetailContent() {
                 </span>
               </div>
 
-              {/* Contact Curator (only when approved) */}
+              {/* Contact Curator Email (only when approved) */}
               {application.status === 'approved' && (
-                <div className="glass-card p-5 animate-slide-up">
-                  <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
-                    <Send className="w-4 h-4 text-sun-400" />
-                    Связаться с куратором
-                  </h3>
-                  <p className="text-xs text-gray-400 mb-4">
-                    Ваша заявка одобрена! Теперь вы можете связаться с куратором для уточнения деталей.
-                  </p>
-                  
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                <div className="glass-card p-4 animate-slide-up bg-sun-500/5 border-sun-500/20">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-gray-500">Куратор:</p>
-                      <p className="text-sm font-medium text-white">{task.curator?.name || 'Загрузка...'}</p>
+                      <p className="text-[10px] uppercase font-bold text-sun-400 tracking-wider">Email Куратора:</p>
+                      <p className="text-sm font-medium text-white">{task.curator?.email || 'Загрузка...'}</p>
                     </div>
                     <a 
                       href={`mailto:${task.curator?.email}`}
-                      className="btn-primary !px-4 !py-2 text-xs flex items-center gap-2"
+                      className="text-xs text-sun-400 hover:text-sun-300 underline font-semibold"
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      Написать
+                      Написать письмо
                     </a>
                   </div>
+                </div>
+              )}
+
+              {/* Verification Section (only when approved or already verifying) */}
+              {(application.status === 'approved' || application.status === 'completed' || application.status === 'rejected') && (
+                <div className="mt-8 animate-fade-in" style={{ animationDelay: '0.2s' }}>
+                  <VerificationCard 
+                    applicationId={application.id} 
+                    taskTitle={task.title}
+                    onVerified={(data) => {
+                      // Optionally refresh application state
+                      setApplication({ ...application, status: data.verdict === 'approved' ? 'completed' : 'rejected' });
+                    }}
+                  />
                 </div>
               )}
             </div>
@@ -271,8 +277,6 @@ function TaskDetailContent() {
 
 export default function VolunteerTaskPage() {
   return (
-    <AuthProvider>
-      <TaskDetailContent />
-    </AuthProvider>
+    <TaskDetailContent />
   );
 }

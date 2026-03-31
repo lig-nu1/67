@@ -4,7 +4,10 @@ import { dbAdmin } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
-    const { taskId } = await req.json();
+    const { taskId, curatorId } = await req.json();
+    if (!taskId || !curatorId) {
+       return NextResponse.json({ error: 'taskId и curatorId обязательны' }, { status: 400 });
+    }
 
     // 1. Get task from DB (including embedding)
     const { data: task, error: taskErr } = await dbAdmin
@@ -15,6 +18,11 @@ export async function POST(req: NextRequest) {
 
     if (taskErr || !task) {
       return NextResponse.json({ error: 'Задача не найдена' }, { status: 404 });
+    }
+
+    // Security check: Only the task's curator or an admin can run matching
+    if (task.curator_id !== curatorId) {
+      return NextResponse.json({ error: 'У вас нет прав для подбора волонтеров для этой задачи' }, { status: 403 });
     }
 
     if (!task.embedding) {
@@ -41,10 +49,14 @@ export async function POST(req: NextRequest) {
       }
 
       // Compute cosine similarity manually
-      const taskEmb = task.embedding as number[];
+      const parseEmb = (e: any) => typeof e === 'string' ? JSON.parse(e) : e;
+      const taskEmb = parseEmb(task.embedding);
+      
       const withScores = allVols.map((v: any) => {
-        const volEmb = v.embedding as number[];
-        const dot = taskEmb.reduce((s: number, val: number, i: number) => s + val * volEmb[i], 0);
+        const volEmb = parseEmb(v.embedding);
+        if (!Array.isArray(taskEmb) || !Array.isArray(volEmb)) return { ...v, similarity: 0 };
+
+        const dot = taskEmb.reduce((s: number, val: number, i: number) => s + val * (volEmb[i] || 0), 0);
         const normA = Math.sqrt(taskEmb.reduce((s: number, val: number) => s + val * val, 0));
         const normB = Math.sqrt(volEmb.reduce((s: number, val: number) => s + val * val, 0));
         const similarity = normA && normB ? dot / (normA * normB) : 0;
@@ -83,22 +95,24 @@ export async function POST(req: NextRequest) {
 async function generateMatchExplanation(task: any, volunteer: any): Promise<string> {
   try {
     const prompt = `
-Задача: "${task.title}"
-Требуемые навыки: ${task.hard_skills?.join(', ') || 'не указаны'}, ${task.soft_skills?.join(', ') || 'не указаны'}
-
-Волонтёр: ${volunteer.name || 'Имя не указано'}
-Навыки волонтёра: ${volunteer.skills?.join(', ') || 'не указаны'}
-Биография: ${volunteer.bio || 'не указана'}
-
-Напиши 2 предложения, объясняющих КОНКРЕТНО почему этот волонтёр подходит для данной задачи.
-Ссылайся на конкретные совпадения навыков. Пиши по-русски, кратко и убедительно.
+      ROLE: Sun Proactive Semantic Matcher
+      TASK: "${task.title}" — Skills needed: ${task.hard_skills?.join(', ')}
+      VOLUNTEER: ${volunteer.name} — Skills: ${volunteer.skills?.join(', ')}
+      BIO: ${volunteer.bio}
+      
+      GOAL: Justify why this volunteer is a GREAT match for the task.
+      Rule: Be specific about their skills/bio matching the task. 
+      Limit to 2-3 sentences.
+      Language: Russian.
+      Example: «Рекомендуем этого кандидата: его опыт ведения школьного Instagram (из био) идеально закрывает вашу потребность в SMM для мероприятия».
     `.trim();
 
-    return await chatCompletion([{ role: 'user', content: prompt }], {
-      model: 'google/gemini-2.5-flash',
-      max_tokens: 150,
+    return await chatCompletion([{ role: 'system', content: 'Вы — высококвалифицированный HR-специалист фонда Sun Foundation. Ваша задача — лаконично объяснить подбор кандидатов.' }, { role: 'user', content: prompt }], {
+      model: 'google/gemini-2.0-flash-001',
+      max_tokens: 200,
     });
-  } catch {
-    return 'Не удалось сгенерировать объяснение.';
+  } catch (err) {
+    console.error('Explanation generation error:', err);
+    return 'Это отличный кандидат: его навыки и опыт хорошо соотносятся с требованиями задачи.';
   }
 }

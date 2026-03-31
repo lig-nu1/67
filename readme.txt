@@ -1,4 +1,4 @@
-SUN PROACTIVE - AI-POWRED SOCIAL TASK EXCHANGE
+SUN PROACTIVE BY (ALLAU) - AI-POWRED SOCIAL TASK EXCHANGE
 ============================================
 
 Sun Proactive is a modern platform designed for automating and optimizing social task management for the Sun Foundation. It uses advanced AI to simplify interaction between the foundation and volunteers.
